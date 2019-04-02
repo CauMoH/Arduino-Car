@@ -1,0 +1,87 @@
+#include <Servo.h>
+#include "GyverTimer.h"
+#include <SPI.h>
+#include <nRF24L01.h>
+#include <RF24.h>
+
+#define MAX_SERVO 180
+#define MAX_MOTOR 255
+
+GTimer_ms updateTimer(20);
+GTimer_ms connectionTimer(200);
+
+RF24 radio(9, 10);
+
+const int FwdPin = 5; //Forward Motor Pin
+const int BwdPin = 6;  //Backward Motor Pin
+const int ServoPin = 8; // Servo Pin
+Servo servo;
+
+byte data[4]; // Массив, куда кладутся принятые данные
+const byte address[6] = "00001";
+
+int package_count = 10;
+
+void setup()
+{
+  servo.attach(ServoPin);
+
+  pinMode(FwdPin, OUTPUT);
+  pinMode(BwdPin, OUTPUT);
+
+  radio.begin();
+  radio.setAutoAck(1);
+  radio.setRetries(0, 15);
+  radio.enableAckPayload();
+  radio.setPayloadSize(4);
+
+  radio.openReadingPipe(1, address);
+  radio.setChannel(0x60);
+
+  radio.setPALevel(RF24_PA_MAX);
+  radio.setDataRate(RF24_250KBPS);
+
+  radio.powerUp();
+  radio.startListening();
+}
+
+void loop()
+{
+  if (updateTimer.isReady()) {
+    updateData();
+  }
+
+  if (connectionTimer.isReady()) {
+    if (package_count == 0) {
+      data[0] = 0;
+    }
+    package_count = 0;
+  }
+
+  while (radio.available()) {
+    package_count++;
+    radio.read(&data, sizeof(data));
+  }
+}
+
+/**
+   Обработчик прерываний
+*/
+void updateData() {
+
+  int yPos = data[0];
+  int xPos = data[1];
+  bool isForward = data[2];
+  bool light = data[3];
+
+  servo.write(xPos);
+
+  if (isForward) {
+    analogWrite(FwdPin, yPos);
+    analogWrite(BwdPin, 0);
+  }
+  else {
+    analogWrite(FwdPin, 0);
+    analogWrite(BwdPin, yPos);
+  }
+}
